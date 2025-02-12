@@ -1,0 +1,61 @@
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+library(ggplot2)
+library(GOplot)
+pFilter=0.05
+adjPfilter=0.05
+
+setwd("1")          
+rt=read.table("input.txt",sep="\t",header=T,check.names=F)       
+genes=as.vector(rt[,1])                                          
+entrezIDs=mget(genes, org.Hs.egSYMBOL2EG, ifnotfound=NA)         
+entrezIDs=as.character(entrezIDs)
+rt=cbind(rt,entrezID=entrezIDs)
+rt=rt[is.na(rt[,"entrezID"])==F,]                                
+gene=rt$entrezID
+
+kk=enrichKEGG(gene = gene, organism = "hsa", pvalueCutoff =1, qvalueCutoff =1)
+KEGG=as.data.frame(kk)
+KEGG=KEGG[(KEGG$pvalue<pFilter & KEGG$p.adjust<adjPfilter),]
+KEGG$geneID=as.character(sapply(KEGG$geneID,function(x)paste(rt$gene[match(strsplit(x,"/")[[1]],as.character(rt$entrezID))],collapse="/")))
+write.table(KEGG,file="KEGG.txt",sep="\t",quote=F,row.names = F)       
+
+kegg=data.frame(Category = "ALL",ID = KEGG$ID,Term = KEGG$Description, Genes = gsub("/", ", ", KEGG$geneID), adj_pval = KEGG$p.adjust)
+genelist <- data.frame(ID = rt$gene, logFC = rt$logFC)
+row.names(genelist)=genelist[,1]
+
+circ <- circle_dat(kegg, genelist)
+termNum = 5                                              
+termNum=ifelse(nrow(kegg)<termNum,nrow(kegg),termNum)
+geneNum = nrow(genelist)                                 
+
+chord <- chord_dat(circ, genelist[1:geneNum,], kegg$Term[1:termNum])
+pdf(file="KEGGcircos.pdf",width = 11,height = 11.2)
+GOChord(chord, 
+        space = 0.001,           
+        gene.order = 'logFC',  
+        gene.space = 0.25,       
+        gene.size = 4,           
+        border.size = 0.1,       
+        process.label = 7)       
+dev.off()
+
+pdf(file="KEGGcluster.pdf",width = 12,height = 9)
+GOCluster(circ, as.character(kegg[1:termNum,3]))
+dev.off()
+
+tiff(file="barplot.pdf",width = 30,height = 20,units ="cm",compression="lzw",bg="white",res=600)
+barplot(kk, drop = TRUE, showCategory = 20)
+dev.off()
+
+tiff(file="dotplot.pdf",width = 30,height = 20,units ="cm",compression="lzw",bg="white",res=600)
+dotplot(kk, showCategory = 20)
+dev.off()
+
+library("pathview")
+keggxls=read.table("KEGG.txt",sep="\t",header=T)
+for(i in keggxls$ID){
+  pv.out <- pathview(gene.data = geneFC, pathway.id = i, species = "hsa", out.suffix = "pathview")
+}
+
